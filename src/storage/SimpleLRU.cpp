@@ -22,6 +22,7 @@ bool SimpleLRU::Put(const std::string &key, const std::string &value) {
 	auto it = _lru_index.find(key);
 	if (it != _lru_index.end()) {
 		if (_cur_size + value.size() - it->second.value.size() <= _max_size) {
+				_cur_size += (value.size() - it->second.value.size());
 				it->second.value.assign(value);
 			if (it->second.next.get() != nullptr) {
 				head->prev->next = it->second.prev->next;
@@ -41,13 +42,32 @@ bool SimpleLRU::Put(const std::string &key, const std::string &value) {
 
 		_lru_index.emplace(key,value);
 		head->prev->next = node;
+		_cur_size += (key.size() + value.size());
 	}
 	else {
 		while(_cur_size + value.size() + key.size() > _max_size) {
 			_cur_size -= (head->value.size() + head->key.size());
+			if (_cur_size == 0) {
+				_lru_index.erase(head->key);
+				_lru_index.emplace(key,value);
+				head->key = key;
+				head->value = value;
+				_cur_size += (key.size() + value.size());
+				return true;
+			}
 			head->next->prev = head->prev;
-			
+			head.reset(head->next.release());
 		}
+		std::unique_ptr<lru_node> node(new lru_node);
+		node->key.assign(key);
+		node->value.assign(value);
+		node->prev = head->prev;
+		node->next = nullptr;
+
+		_lru_index.emplace(key,value);
+		head->prev->next = node;
+		_cur_size += (key.size() + value.size());
+		return true;
 	}
 	return false;
 }
