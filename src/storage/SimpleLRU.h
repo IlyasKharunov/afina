@@ -21,6 +21,9 @@ public:
 
     ~SimpleLRU() {
         _lru_index.clear();
+        if(_lru_head.get() != nullptr) {
+            while (_lru_head->next.get() != nullptr) _lru_head.reset(_lru_head->next.release());
+        }
         _lru_head.reset(); // TODO: Here is stack overflow
     }
 
