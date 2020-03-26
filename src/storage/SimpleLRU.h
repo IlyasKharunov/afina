@@ -17,12 +17,15 @@ namespace Backend {
  */
 class SimpleLRU : public Afina::Storage {
 public:
-    SimpleLRU(size_t max_size = 1024) : _max_size(max_size), _cur_size(0) {}
+    SimpleLRU(size_t max_size = 1024) : _max_size(max_size), _cur_size(0), _lru_head(new lru_node) {
+        _lru_head->prev = _lru_head.get();
+        _lru_head->next = nullptr;
+    }
 
     ~SimpleLRU() {
         _lru_index.clear();
         if(_lru_head.get() != nullptr) {
-            while (_lru_head->next.get() != nullptr) _lru_head.reset(_lru_head->next.release());
+            while (_lru_head->next.get() != nullptr) _lru_head = std::move(_lru_head->next);
         }
         _lru_head.reset(); // TODO: Here is stack overflow
     }
@@ -49,6 +52,8 @@ private:
         std::string value;
         lru_node* prev;
         std::unique_ptr<lru_node> next;
+
+        lru_node(const std::string &str = "") : key(str) {}
     };
 
     // Maximum number of bytes could be stored in this cache.
