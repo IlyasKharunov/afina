@@ -32,7 +32,8 @@ void Connection::DoRead() {
     
     try {
         //check eagain
-        while (readed_bytes = read(_socket, &rbuffer[offseti], bufflen - offseti) > 0) {
+        while ((readed_bytes = read(_socket, &rbuffer[offseti], bufflen - offseti)) > 0) {
+            _logger->set_level(spdlog::level::debug);
             _logger->debug("Got {} bytes from socket", readed_bytes);
             readed_bytes += offseti;
             offseti = 0;
@@ -82,6 +83,7 @@ void Connection::DoRead() {
 
                 // Thre is command & argument - RUN!
                 if (command_to_execute && arg_remains == 0) {
+                    
                     _logger->debug("Start command execution");
 
                     std::string result;
@@ -98,15 +100,14 @@ void Connection::DoRead() {
                 }
             } // while (readed_bytes > 0)
         } // while(read > 0)
+        if (answers.size() != 0) {
+            _event.events |= EPOLLOUT;
+        }
         if (readed_bytes == 0) {
             _logger->debug("Connection closed");
+            alive = false;
         }
-        else if (readed_bytes == -1 && errno == EAGAIN) {
-            if (answers.size() != 0) {
-                _event.events |= EPOLLOUT;
-            }
-        }
-        else {
+        else if (errno != EWOULDBLOCK && errno != EAGAIN) {
             throw std::runtime_error(std::string(strerror(errno)));
         }
     }
@@ -148,11 +149,15 @@ void Connection::DoWrite() {
 
     head_written_count = writev(_socket, tmp.get(), count);
 
-    if (head_written_count == -1 && errno == EINTR){
+    if (head_written_count == -1 && (errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN)){
         return;
     }
     if (head_written_count <= 0) {
-        std::string err(strerror(errno));
+        std::string err;
+        if (head_written_count == 0)
+            err = "Unexpected error";
+        else
+            err = strerror(errno);
         alive = false;
         _logger->error("Failed to send response on descriptor {}: {}", _socket, err);
         return;
