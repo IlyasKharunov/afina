@@ -38,6 +38,7 @@ ServerImpl::~ServerImpl() {}
 // See Server.h
 void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) {
     _logger = pLogging->select("network");
+    //_logger->set_level(spdlog::level::debug);
     _logger->info("Start mt_nonblocking network service");
 
     sigset_t sig_mask;
@@ -206,6 +207,7 @@ void ServerImpl::OnRun() {
                     if ((epoll_ctl_retval = epoll_ctl(_data_epoll_fd, EPOLL_CTL_ADD, pc->_socket, &pc->_event))) {
                         _logger->debug("epoll_ctl failed during connection register in workers'epoll: error {}", epoll_ctl_retval);
                         pc->OnError();
+                        close(pc->_socket);
                         delete pc;
                     }
                 }

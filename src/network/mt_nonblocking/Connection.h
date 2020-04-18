@@ -25,7 +25,7 @@ public:
         offseti = 0;
         offseto = 0;
         arg_remains = 0;
-        alive = true;
+        alive = false;
     }
 
     inline bool isAlive() const { return alive; }

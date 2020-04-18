@@ -1,6 +1,7 @@
 #include "Connection.h"
 
 #include <iostream>
+#include <unistd.h>
 #include <sys/uio.h>
 
 namespace Afina {
@@ -9,29 +10,30 @@ namespace MTnonblock {
 
 // See Connection.h
 void Connection::Start() {
-    std::cout << "Start" << std::endl;
+    //std::cout << "Start" << std::endl;
     _event.events = EPOLLIN;
+    alive = true;
 }
 
 // See Connection.h
 void Connection::OnError() {
-    std::cout << "OnError" << std::endl;
+    //std::cout << "OnError" << std::endl;
     alive = false;
 }
 
 // See Connection.h
 void Connection::OnClose() {
-    std::cout << "OnClose" << std::endl;
+    //std::cout << "OnClose" << std::endl;
     alive = false;
 }
 
 // See Connection.h
 void Connection::DoRead() {
-    std::cout << "DoRead" << std::endl;
+    //std::cout << "DoRead" << std::endl;
     
     try {
         //check eagain
-        while (readed_bytes = read(_socket, &rbuffer[offseti], bufflen - offseti) > 0) {
+        while ((readed_bytes = read(_socket, &rbuffer[offseti], bufflen - offseti)) > 0) {
             _logger->debug("Got {} bytes from socket", readed_bytes);
             readed_bytes += offseti;
             offseti = 0;
@@ -81,6 +83,7 @@ void Connection::DoRead() {
 
                 // Thre is command & argument - RUN!
                 if (command_to_execute && arg_remains == 0) {
+                    
                     _logger->debug("Start command execution");
 
                     std::string result;
@@ -97,40 +100,38 @@ void Connection::DoRead() {
                 }
             } // while (readed_bytes > 0)
         } // while(read > 0)
+        if (answers.size() != 0) {
+            _event.events |= EPOLLOUT;
+        }
         if (readed_bytes == 0) {
             _logger->debug("Connection closed");
-            alive = false;
+            OnClose();
         }
-        else if (readed_bytes == -1 && errno == EAGAIN) {
-            if (answers.size() != 0) {
-                _event.events |= EPOLLOUT;
-            }
-        }
-        else {
+        else if (errno != EWOULDBLOCK && errno != EAGAIN) {
             throw std::runtime_error(std::string(strerror(errno)));
         }
     }
     catch (std::runtime_error &ex) {
-        alive = false;
         std::string message("SERVER ERROR ");
         message += ex.what();
         message += "\r\n";
-        answers.push_back(message);
         _logger->error("Failed to process connection on descriptor {}: {}", _socket, ex.what());
+        write(_socket, message.data(), message.size());
+        OnError();
     }
     catch (...) {
-        alive = false;
         std::string message("SERVER ERROR ");
         message += "Unexpected error";
         message += "\r\n";
-        answers.push_back(message);
-        _logger->error("Unexpected error");
+        _logger->error(message);
+        write(_socket, message.data(), message.size());
+        OnError();
     }
 }
 
 // See Connection.h
 void Connection::DoWrite() {
-    std::cout << "DoWrite" << std::endl;
+    //std::cout << "DoWrite" << std::endl;
     size_t count = answers.size();
     std::unique_ptr<iovec[]> tmp(new iovec[count]);
     int head_written_count = 0;
@@ -148,18 +149,22 @@ void Connection::DoWrite() {
 
     head_written_count = writev(_socket, tmp.get(), count);
 
-    if (head_written_count == -1 && errno == EINTR){
+    if (head_written_count == -1 && (errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN)){
         return;
     }
     if (head_written_count <= 0) {
-        std::string err(strerror(errno));
-        alive = false;
+        std::string err;
+        if (head_written_count == 0)
+            err = "Unexpected error";
+        else
+            err = strerror(errno);
         _logger->error("Failed to send response on descriptor {}: {}", _socket, err);
+        OnError();
         return;
     }
 
     while (head_written_count > 0) {
-        if (head_written_count > answers.front().size()) {
+        if (head_written_count >= answers.front().size()) {
             head_written_count -= answers.front().size();
             answers.pop_front();
         }
