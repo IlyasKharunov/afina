@@ -180,10 +180,13 @@ void ServerImpl::Worker(int client_socket) {
 
     try {
         int readed_bytes = 0;
+        int offset = 0;
         char client_buffer[4096];
 
-        while ((readed_bytes = read(client_socket, &client_buffer[readed_bytes], sizeof(client_buffer) - readed_bytes)) > 0 && running.load()) {
+        while ((readed_bytes = read(client_socket, &client_buffer[offset], sizeof(client_buffer) - offset)) > 0 && running.load()) {
             _logger->debug("Got {} bytes from socket", readed_bytes);
+            readed_bytes += offset;
+            offset = 0;
 
             // Single block of data readed from the socket could trigger inside actions a multiple times,
             // for example:
@@ -207,6 +210,7 @@ void ServerImpl::Worker(int client_socket) {
                     // Parsed might fails to consume any bytes from input stream. In real life that could happens,
                     // for example, because we are working with UTF-16 chars and only 1 byte left in stream
                     if (parsed == 0) {
+                        offset = readed_bytes;
                         break;
                     } 
                     else {
