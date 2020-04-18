@@ -9,31 +9,30 @@ namespace STnonblock {
 
 // See Connection.h
 void Connection::Start() {
-    std::cout << "Start" << std::endl;
+    //std::cout << "Start" << std::endl;
     _event.events = EPOLLIN;
     alive = true;
 }
 
 // See Connection.h
 void Connection::OnError() {
-    std::cout << "OnError" << std::endl;
+    //std::cout << "OnError" << std::endl;
     alive = false;
 }
 
 // See Connection.h
 void Connection::OnClose() {
-    std::cout << "OnClose" << std::endl;
+    //std::cout << "OnClose" << std::endl;
     alive = false;
 }
 
 // See Connection.h
 void Connection::DoRead() {
-    std::cout << "DoRead" << std::endl;
+    //std::cout << "DoRead" << std::endl;
     
     try {
         //check eagain
         while ((readed_bytes = read(_socket, &rbuffer[offseti], bufflen - offseti)) > 0) {
-            _logger->set_level(spdlog::level::debug);
             _logger->debug("Got {} bytes from socket", readed_bytes);
             readed_bytes += offseti;
             offseti = 0;
@@ -105,33 +104,33 @@ void Connection::DoRead() {
         }
         if (readed_bytes == 0) {
             _logger->debug("Connection closed");
-            alive = false;
+            OnClose();
         }
         else if (errno != EWOULDBLOCK && errno != EAGAIN) {
             throw std::runtime_error(std::string(strerror(errno)));
         }
     }
     catch (std::runtime_error &ex) {
-        alive = false;
         std::string message("SERVER ERROR ");
         message += ex.what();
         message += "\r\n";
-        answers.push_back(message);
         _logger->error("Failed to process connection on descriptor {}: {}", _socket, ex.what());
+        write(_socket, message.data(), message.size());
+        OnError();
     }
     catch (...) {
-        alive = false;
         std::string message("SERVER ERROR ");
         message += "Unexpected error";
         message += "\r\n";
-        answers.push_back(message);
-        _logger->error("Unexpected error");
+        _logger->error(message);
+        write(_socket, message.data(), message.size());
+        OnError();
     }
 }
 
 // See Connection.h
 void Connection::DoWrite() {
-    std::cout << "DoWrite" << std::endl;
+    //std::cout << "DoWrite" << std::endl;
     size_t count = answers.size();
     std::unique_ptr<iovec[]> tmp(new iovec[count]);
     int head_written_count = 0;
@@ -158,13 +157,13 @@ void Connection::DoWrite() {
             err = "Unexpected error";
         else
             err = strerror(errno);
-        alive = false;
+        OnError();
         _logger->error("Failed to send response on descriptor {}: {}", _socket, err);
         return;
     }
 
     while (head_written_count > 0) {
-        if (head_written_count > answers.front().size()) {
+        if (head_written_count >= answers.front().size()) {
             head_written_count -= answers.front().size();
             answers.pop_front();
         }
