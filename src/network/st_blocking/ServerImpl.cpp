@@ -166,10 +166,13 @@ void ServerImpl::OnRun() {
         // - execute each command
         // - send response
         try {
-            int readed_bytes = -1;
+            int readed_bytes = 0;
+            int offset = 0;
             char client_buffer[4096];
-            while ((readed_bytes = read(client_socket, client_buffer, sizeof(client_buffer))) > 0) {
+            while ((readed_bytes = read(client_socket, &client_buffer[offset], sizeof(client_buffer) - offset)) > 0) {
                 _logger->debug("Got {} bytes from socket", readed_bytes);
+                readed_bytes += offset;
+                offset = 0;
 
                 // Single block of data readed from the socket could trigger inside actions a multiple times,
                 // for example:
@@ -193,6 +196,7 @@ void ServerImpl::OnRun() {
                         // Parsed might fails to consume any bytes from input stream. In real life that could happens,
                         // for example, because we are working with UTF-16 chars and only 1 byte left in stream
                         if (parsed == 0) {
+                            offset = readed_bytes;
                             break;
                         } else {
                             std::memmove(client_buffer, client_buffer + parsed, readed_bytes - parsed);
@@ -235,10 +239,12 @@ void ServerImpl::OnRun() {
 
             if (readed_bytes == 0) {
                 _logger->debug("Connection closed");
-            } else {
+            } 
+            else {
                 throw std::runtime_error(std::string(strerror(errno)));
             }
-        } catch (std::runtime_error &ex) {
+        } 
+        catch (std::runtime_error &ex) {
             _logger->error("Failed to process connection on descriptor {}: {}", client_socket, ex.what());
         }
 
