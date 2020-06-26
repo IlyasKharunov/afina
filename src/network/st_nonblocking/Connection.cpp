@@ -172,7 +172,7 @@ void Connection::DoWrite() {
     }
     offseto = head_written_count;
     if (answers.size() == 0) {
-        _event.events = EPOLLIN;
+        _event.events = EPOLLIN & ~EPOLLOUT;
     }
 }
 
