@@ -120,6 +120,8 @@ void ServerImpl::Stop() {
     if (eventfd_write(_event_fd, 1)) {
         throw std::runtime_error("Failed to wakeup workers");
     }
+    shutdown(_server_socket, SHUT_RDWR);
+    close(_server_socket);
 }
 
 // See Server.h
@@ -169,46 +171,48 @@ void ServerImpl::OnRun() {
                 continue;
             }
 
-            for (;;) {
-                struct sockaddr in_addr;
-                socklen_t in_len;
+            if (run) {
+                for (;;) {
+                    struct sockaddr in_addr;
+                    socklen_t in_len;
 
-                // No need to make these sockets non blocking since accept4() takes care of it.
-                in_len = sizeof in_addr;
-                int infd = accept4(_server_socket, &in_addr, &in_len, SOCK_NONBLOCK | SOCK_CLOEXEC);
-                if (infd == -1) {
-                    if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
-                        break; // We have processed all incoming connections.
-                    } else {
-                        _logger->error("Failed to accept socket");
-                        break;
+                    // No need to make these sockets non blocking since accept4() takes care of it.
+                    in_len = sizeof in_addr;
+                    int infd = accept4(_server_socket, &in_addr, &in_len, SOCK_NONBLOCK | SOCK_CLOEXEC);
+                    if (infd == -1) {
+                        if ((errno == EAGAIN) || (errno == EWOULDBLOCK)) {
+                            break; // We have processed all incoming connections.
+                        } else {
+                            _logger->error("Failed to accept socket");
+                            break;
+                        }
                     }
-                }
 
-                // Print host and service info.
-                char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
-                int retval = getnameinfo(&in_addr, in_len, hbuf, sizeof hbuf, sbuf, sizeof sbuf,
-                                         NI_NUMERICHOST | NI_NUMERICSERV);
-                if (retval == 0) {
-                    _logger->info("Accepted connection on descriptor {} (host={}, port={})\n", infd, hbuf, sbuf);
-                }
+                    // Print host and service info.
+                    char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
+                    int retval = getnameinfo(&in_addr, in_len, hbuf, sizeof hbuf, sbuf, sizeof sbuf,
+                                            NI_NUMERICHOST | NI_NUMERICSERV);
+                    if (retval == 0) {
+                        _logger->info("Accepted connection on descriptor {} (host={}, port={})\n", infd, hbuf, sbuf);
+                    }
 
-                // Register the new FD to be monitored by epoll.
-                Connection *pc = new Connection(infd, pStorage, _logger);
-                if (pc == nullptr) {
-                    throw std::runtime_error("Failed to allocate connection");
-                }
+                    // Register the new FD to be monitored by epoll.
+                    Connection *pc = new Connection(infd, pStorage, _logger);
+                    if (pc == nullptr) {
+                        throw std::runtime_error("Failed to allocate connection");
+                    }
 
-                // Register connection in worker's epoll
-                pc->Start();
-                if (pc->isAlive()) {
-                    pc->_event.events |= EPOLLONESHOT;
-                    int epoll_ctl_retval;
-                    if ((epoll_ctl_retval = epoll_ctl(_data_epoll_fd, EPOLL_CTL_ADD, pc->_socket, &pc->_event))) {
-                        _logger->debug("epoll_ctl failed during connection register in workers'epoll: error {}", epoll_ctl_retval);
-                        pc->OnError();
-                        close(pc->_socket);
-                        delete pc;
+                    // Register connection in worker's epoll
+                    pc->Start();
+                    if (pc->isAlive()) {
+                        pc->_event.events |= EPOLLONESHOT;
+                        int epoll_ctl_retval;
+                        if ((epoll_ctl_retval = epoll_ctl(_data_epoll_fd, EPOLL_CTL_ADD, pc->_socket, &pc->_event))) {
+                            _logger->debug("epoll_ctl failed during connection register in workers'epoll: error {}", epoll_ctl_retval);
+                            pc->OnError();
+                            close(pc->_socket);
+                            delete pc;
+                        }
                     }
                 }
             }
