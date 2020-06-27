@@ -3,7 +3,9 @@
 
 #include <thread>
 #include <vector>
+#include <unordered_map>
 
+#include "Connection.h"
 #include <afina/network/Server.h>
 
 namespace spdlog {
@@ -56,6 +58,8 @@ private:
 
     // IO thread
     std::thread _work_thread;
+
+    std::unordered_map<int, Connection *> connections;
 };
 
 } // namespace STnonblock
