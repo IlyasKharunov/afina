@@ -104,7 +104,6 @@ void Connection::DoRead() {
         }
         if (readed_bytes == 0) {
             _logger->debug("Connection closed");
-            OnClose();
         }
         else if (errno != EWOULDBLOCK && errno != EAGAIN) {
             throw std::runtime_error(std::string(strerror(errno)));
@@ -136,7 +135,7 @@ void Connection::DoWrite() {
         }
     }
 
-    tmp[0].iov_base += offseto;
+    tmp[0].iov_base = (char*)tmp[0].iov_base + offseto;
     tmp[0].iov_len -= offseto;
 
     head_written_count = writev(_socket, tmp, count);
