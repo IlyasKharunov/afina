@@ -31,7 +31,7 @@ void Connection::OnClose() {
 // See Connection.h
 void Connection::DoRead() {
     //std::cout << "DoRead" << std::endl;
-    
+    std::atomic_thread_fence(std::memory_order_acquire);
     try {
         //check eagain
         while ((readed_bytes = read(_socket, &rbuffer[offseti], bufflen - offseti)) > 0) {
@@ -119,13 +119,11 @@ void Connection::DoRead() {
         write(_socket, message.data(), message.size());
         OnError();
     }
-    std::atomic_thread_fence(std::memory_order_acquire);
 }
 
 // See Connection.h
 void Connection::DoWrite() {
     //std::cout << "DoWrite" << std::endl;
-    std::atomic_thread_fence(std::memory_order_release);
     size_t count = answers.size();
     iovec tmp [count];
     int head_written_count = 0;
@@ -138,7 +136,7 @@ void Connection::DoWrite() {
         }
     }
 
-    tmp[0].iov_base += offseto;
+    tmp[0].iov_base = (char*)tmp[0].iov_base + offseto;
     tmp[0].iov_len -= offseto;
 
     head_written_count = writev(_socket, tmp, count);
@@ -167,6 +165,7 @@ void Connection::DoWrite() {
         _event.events = EPOLLIN & ~EPOLLOUT;
         alive = false;
     }
+    std::atomic_thread_fence(std::memory_order_release);
 }
 
 } // namespace MTnonblock

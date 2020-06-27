@@ -30,7 +30,7 @@ namespace Network {
 namespace MTnonblock {
 
 // See Server.h
-ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Logging::Service> pl) : Server(ps, pl) {}
+ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Logging::Service> pl) : Server(ps, pl), workers_count(0) {}
 
 // See Server.h
 ServerImpl::~ServerImpl() {}

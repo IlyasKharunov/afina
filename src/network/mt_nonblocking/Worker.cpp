@@ -53,10 +53,6 @@ void Worker::Start(int epoll_fd) {
         assert(_epoll_fd == -1);
         _epoll_fd = epoll_fd;
         _logger = _pLogging->select("network.worker");
-        {
-            std::unique_lock<std::mutex> lock(_addr->sock_manager);
-            _addr->workers_count++;
-        }
         _thread = std::thread(&Worker::OnRun, this);
     }
 }
@@ -81,6 +77,9 @@ void Worker::OnRun() {
     // for events to avoid thundering herd type behavior.
     int timeout = -1;
     std::array<struct epoll_event, 64> mod_list;
+
+    _addr->workers_count++;
+
     while (isRunning) {
         int nmod = epoll_wait(_epoll_fd, &mod_list[0], mod_list.size(), timeout);
         _logger->debug("Worker wokeup: {} events", nmod);
@@ -152,13 +151,16 @@ void Worker::OnRun() {
         }
         // TODO: Select timeout...
     }
+    _addr->workers_count--;
     {
-        std::unique_lock<std::mutex> lock(_addr->sock_manager);
-        _addr->workers_count--;
-        if (_addr->workers_count == 0) {
-            for (auto it = _addr->connections.begin();it != _addr->connections.end();it++) {
-                close(it->second->_socket);
-                delete it->second;
+        std::unique_lock<std::mutex> lock(_addr->sock_manager, std::try_to_lock);
+        if (lock.owns_lock()) {
+            if (_addr->workers_count.load(std::memory_order_relaxed) == 0) {
+                for (auto it = _addr->connections.begin();it != _addr->connections.end();it++) {
+                    close(it->second->_socket);
+                    delete it->second;
+                }
+                _addr->workers_count--;
             }
         }
     }
