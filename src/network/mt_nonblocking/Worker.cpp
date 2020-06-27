@@ -21,9 +21,10 @@ namespace Network {
 namespace MTnonblock {
 
 // See Worker.h
-Worker::Worker(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Afina::Logging::Service> pl)
+Worker::Worker(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Afina::Logging::Service> pl, Afina::Network::MTnonblock::ServerImpl * addr)
     : _pStorage(ps), _pLogging(pl), isRunning(false), _epoll_fd(-1) {
     // TODO: implementation here
+    _addr = addr;
 }
 
 // See Worker.h
@@ -52,6 +53,10 @@ void Worker::Start(int epoll_fd) {
         assert(_epoll_fd == -1);
         _epoll_fd = epoll_fd;
         _logger = _pLogging->select("network.worker");
+        {
+            std::unique_lock<std::mutex> lock(_addr->sock_manager);
+            _addr->workers_count++;
+        }
         _thread = std::thread(&Worker::OnRun, this);
     }
 }
@@ -118,6 +123,14 @@ void Worker::OnRun() {
                     _logger->debug("epoll_ctl failed during connection rearm: error {}", epoll_ctl_retval);
                     pconn->OnError();
                     close(pconn->_socket);
+
+
+                    {
+                        std::unique_lock<std::mutex> lock(_addr->sock_manager);
+                        _addr->connections.erase(pconn->_socket);
+                    }
+
+
                     delete pconn;
                 }
             }
@@ -127,10 +140,27 @@ void Worker::OnRun() {
                     std::cerr << "Failed to delete connection! " << std::string(strerror(errno)) << std::endl;
                 }
                 close(pconn->_socket);
+
+                {
+                    std::unique_lock<std::mutex> lock(_addr->sock_manager);
+                    _addr->connections.erase(pconn->_socket);
+                }
+
+
                 delete pconn;
             }
         }
         // TODO: Select timeout...
+    }
+    {
+        std::unique_lock<std::mutex> lock(_addr->sock_manager);
+        _addr->workers_count--;
+        if (_addr->workers_count == 0) {
+            for (auto it = _addr->connections.begin();it != _addr->connections.end();it++) {
+                close(it->second->_socket);
+                delete it->second;
+            }
+        }
     }
     _logger->warn("Worker stopped");
 }

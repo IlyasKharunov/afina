@@ -3,7 +3,9 @@
 
 #include <thread>
 #include <vector>
+#include <unordered_map>
 
+#include "Connection.h"
 #include <afina/network/Server.h>
 
 namespace spdlog {
@@ -23,6 +25,9 @@ class Worker;
  */
 class ServerImpl : public Server {
 public:
+    std::mutex sock_manager;
+    int workers_count;
+    std::unordered_map<int, Connection *> connections;
     ServerImpl(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Logging::Service> pl);
     ~ServerImpl();
 

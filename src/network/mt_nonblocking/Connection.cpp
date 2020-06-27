@@ -3,6 +3,7 @@
 #include <iostream>
 #include <unistd.h>
 #include <sys/uio.h>
+#include <atomic>
 
 namespace Afina {
 namespace Network {
@@ -105,7 +106,6 @@ void Connection::DoRead() {
         }
         if (readed_bytes == 0) {
             _logger->debug("Connection closed");
-            OnClose();
         }
         else if (errno != EWOULDBLOCK && errno != EAGAIN) {
             throw std::runtime_error(std::string(strerror(errno)));
@@ -119,21 +119,15 @@ void Connection::DoRead() {
         write(_socket, message.data(), message.size());
         OnError();
     }
-    catch (...) {
-        std::string message("SERVER ERROR ");
-        message += "Unexpected error";
-        message += "\r\n";
-        _logger->error(message);
-        write(_socket, message.data(), message.size());
-        OnError();
-    }
+    std::atomic_thread_fence(std::memory_order_acquire);
 }
 
 // See Connection.h
 void Connection::DoWrite() {
     //std::cout << "DoWrite" << std::endl;
+    std::atomic_thread_fence(std::memory_order_release);
     size_t count = answers.size();
-    std::unique_ptr<iovec[]> tmp(new iovec[count]);
+    iovec tmp [count];
     int head_written_count = 0;
     {
         std::size_t i = 0;
@@ -147,17 +141,14 @@ void Connection::DoWrite() {
     tmp[0].iov_base += offseto;
     tmp[0].iov_len -= offseto;
 
-    head_written_count = writev(_socket, tmp.get(), count);
+    head_written_count = writev(_socket, tmp, count);
 
     if (head_written_count == -1 && (errno == EINTR || errno == EWOULDBLOCK || errno == EAGAIN)){
         return;
     }
-    if (head_written_count <= 0) {
+    if (head_written_count < 0) {
         std::string err;
-        if (head_written_count == 0)
-            err = "Unexpected error";
-        else
-            err = strerror(errno);
+        err = strerror(errno);
         _logger->error("Failed to send response on descriptor {}: {}", _socket, err);
         OnError();
         return;
@@ -174,6 +165,7 @@ void Connection::DoWrite() {
     offseto = head_written_count;
     if (answers.size() == 0) {
         _event.events = EPOLLIN & ~EPOLLOUT;
+        alive = false;
     }
 }
 

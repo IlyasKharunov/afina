@@ -97,7 +97,7 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
 
     _workers.reserve(n_workers);
     for (int i = 0; i < n_workers; i++) {
-        _workers.emplace_back(pStorage, pLogging);
+        _workers.emplace_back(pStorage, pLogging, this);
         _workers.back().Start(_data_epoll_fd);
     }
 
@@ -121,6 +121,13 @@ void ServerImpl::Stop() {
         throw std::runtime_error("Failed to wakeup workers");
     }
     shutdown(_server_socket, SHUT_RDWR);
+
+    {
+        std::unique_lock<std::mutex> lock(sock_manager);
+        for (auto it = connections.begin();it != connections.end();it++) {
+            shutdown(it->second->_socket, SHUT_RD);
+        }
+    }
     close(_server_socket);
 }
 
@@ -201,6 +208,12 @@ void ServerImpl::OnRun() {
                     if (pc == nullptr) {
                         throw std::runtime_error("Failed to allocate connection");
                     }
+                    
+                    {
+                        std::unique_lock<std::mutex> lock(sock_manager);
+                        connections.emplace(std::make_pair(infd, pc));
+                    }
+                    
 
                     // Register connection in worker's epoll
                     pc->Start();
@@ -211,6 +224,11 @@ void ServerImpl::OnRun() {
                             _logger->debug("epoll_ctl failed during connection register in workers'epoll: error {}", epoll_ctl_retval);
                             pc->OnError();
                             close(pc->_socket);
+                            {
+                                std::unique_lock<std::mutex> lock(sock_manager);
+                                connections.erase(pc->_socket);
+                            }
+
                             delete pc;
                         }
                     }
