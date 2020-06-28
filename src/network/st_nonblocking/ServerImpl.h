@@ -60,6 +60,9 @@ private:
     std::thread _work_thread;
 
     std::unordered_map<int, Connection *> connections;
+
+    bool stopped = false;
+    bool joined = false;
 };
 
 } // namespace STnonblock
