@@ -69,6 +69,9 @@ private:
 
     // threads serving read/write requests
     std::vector<Worker> _workers;
+    bool joined = false;
+    bool stopped = false;
+    bool started = false;
 };
 
 } // namespace MTnonblock

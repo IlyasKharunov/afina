@@ -33,7 +33,14 @@ namespace MTnonblock {
 ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Logging::Service> pl) : Server(ps, pl), workers_count(0) {}
 
 // See Server.h
-ServerImpl::~ServerImpl() {}
+ServerImpl::~ServerImpl() {
+    if (started) {
+        if (!stopped)
+            Stop();
+        if (!joined)
+            Join();
+    }
+}
 
 // See Server.h
 void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) {
@@ -106,6 +113,7 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
     for (int i = 0; i < n_acceptors; i++) {
         _acceptors.emplace_back(&ServerImpl::OnRun, this);
     }
+    started = true;
 }
 
 // See Server.h
@@ -129,6 +137,7 @@ void ServerImpl::Stop() {
         }
     }
     close(_server_socket);
+    stopped = true;
 }
 
 // See Server.h
@@ -140,6 +149,7 @@ void ServerImpl::Join() {
     for (auto &w : _workers) {
         w.Join();
     }
+    joined = true;
 }
 
 // See ServerImpl.h
