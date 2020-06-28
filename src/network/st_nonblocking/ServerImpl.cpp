@@ -33,10 +33,12 @@ ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Loggi
 
 // See Server.h
 ServerImpl::~ServerImpl() {
-    if (!stopped) 
-        Stop();
-    if (!joined)
-        Join();
+    if (started) {
+        if (!stopped) 
+            Stop();
+        if (!joined)
+            Join();
+    }
 }
 
 // See Server.h
@@ -70,6 +72,8 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
         throw std::runtime_error("Socket setsockopt() failed: " + std::string(strerror(errno)));
     }
 
+
+
     if (bind(_server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
         close(_server_socket);
         throw std::runtime_error("Socket bind() failed: " + std::string(strerror(errno)));
@@ -87,6 +91,7 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
     }
 
     _work_thread = std::thread(&ServerImpl::OnRun, this);
+    started = true;
 }
 
 // See Server.h

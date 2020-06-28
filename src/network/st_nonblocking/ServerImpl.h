@@ -63,6 +63,7 @@ private:
 
     bool stopped = false;
     bool joined = false;
+    bool started = false;
 };
 
 } // namespace STnonblock
