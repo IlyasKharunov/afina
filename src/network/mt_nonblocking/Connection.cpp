@@ -110,6 +110,7 @@ void Connection::DoRead() {
         else if (errno != EWOULDBLOCK && errno != EAGAIN) {
             throw std::runtime_error(std::string(strerror(errno)));
         }
+        std::atomic_thread_fence(std::memory_order_release);
     }
     catch (std::runtime_error &ex) {
         std::string message("SERVER ERROR ");
@@ -124,6 +125,7 @@ void Connection::DoRead() {
 // See Connection.h
 void Connection::DoWrite() {
     //std::cout << "DoWrite" << std::endl;
+    std::atomic_thread_fence(std::memory_order_acquire);
     size_t count = answers.size();
     iovec tmp [count];
     int head_written_count = 0;
