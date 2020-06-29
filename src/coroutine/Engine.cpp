@@ -19,7 +19,7 @@ void Engine::Store(context &ctx) {
     auto &buf = std::get<0>(ctx.Stack);
     auto &new_size = std::get<1>(ctx.Stack);
     if (size > new_size) {
-        delete buf;
+        delete [] buf;
         buf = new char[size];
         new_size = size;
     }
