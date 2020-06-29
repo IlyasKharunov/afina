@@ -31,7 +31,7 @@ void Connection::OnClose() {
 // See Connection.h
 void Connection::DoRead() {
     //std::cout << "DoRead" << std::endl;
-    std::atomic_thread_fence(std::memory_order_acquire);
+    //std::atomic_thread_fence(std::memory_order_acquire);
     try {
         //check eagain
         while ((readed_bytes = read(_socket, &rbuffer[offseti], bufflen - offseti)) > 0) {
@@ -165,7 +165,7 @@ void Connection::DoWrite() {
         _event.events = EPOLLIN & ~EPOLLOUT;
         alive = false;
     }
-    std::atomic_thread_fence(std::memory_order_release);
+    //std::atomic_thread_fence(std::memory_order_release);
 }
 
 void Connection::Process(Afina::Coroutine::Engine& engine) {
