@@ -152,18 +152,18 @@ void Worker::OnRun() {
         // TODO: Select timeout...
     }
     _addr->workers_count--;
-    {
-        std::unique_lock<std::mutex> lock(_addr->sock_manager, std::try_to_lock);
-        if (lock.owns_lock()) {
-            if (_addr->workers_count.load(std::memory_order_relaxed) == 0) {
-                for (auto it = _addr->connections.begin();it != _addr->connections.end();it++) {
-                    close(it->second->_socket);
-                    delete it->second;
+        if (_addr->workers_count.load(std::memory_order_relaxed) == 0) {
+            std::unique_lock<std::mutex> lock(_addr->sock_manager, std::try_to_lock);
+            if (lock.owns_lock()) {
+                if (_addr->workers_count.load(std::memory_order_relaxed) == 0) {
+                    for (auto it = _addr->connections.begin(); it != _addr->connections.end(); it++) {
+                        close(it->second->_socket);
+                        delete it->second;
+                    }
+                    _addr->workers_count--;
                 }
-                _addr->workers_count--;
             }
         }
-    }
     _logger->warn("Worker stopped");
 }
 
