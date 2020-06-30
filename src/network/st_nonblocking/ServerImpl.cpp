@@ -32,11 +32,19 @@ namespace STnonblock {
 ServerImpl::ServerImpl(std::shared_ptr<Afina::Storage> ps, std::shared_ptr<Logging::Service> pl) : Server(ps, pl) {}
 
 // See Server.h
-ServerImpl::~ServerImpl() {}
+ServerImpl::~ServerImpl() {
+    if (started) {
+        if (!stopped) 
+            Stop();
+        if (!joined)
+            Join();
+    }
+}
 
 // See Server.h
 void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) {
     _logger = pLogging->select("network");
+    //_logger->set_level(spdlog::level::debug);
     _logger->info("Start st_nonblocking network service");
 
     sigset_t sig_mask;
@@ -64,6 +72,8 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
         throw std::runtime_error("Socket setsockopt() failed: " + std::string(strerror(errno)));
     }
 
+
+
     if (bind(_server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
         close(_server_socket);
         throw std::runtime_error("Socket bind() failed: " + std::string(strerror(errno)));
@@ -81,6 +91,7 @@ void ServerImpl::Start(uint16_t port, uint32_t n_acceptors, uint32_t n_workers) 
     }
 
     _work_thread = std::thread(&ServerImpl::OnRun, this);
+    started = true;
 }
 
 // See Server.h
@@ -91,12 +102,20 @@ void ServerImpl::Stop() {
     if (eventfd_write(_event_fd, 1)) {
         throw std::runtime_error("Failed to wakeup workers");
     }
+    
+    for (auto it = connections.begin();it != connections.end();it++) {
+        shutdown(it->second->_socket, SHUT_RD);
+    }
+    shutdown(_server_socket, SHUT_RDWR);
+    close(_server_socket);
+    stopped = true;
 }
 
 // See Server.h
 void ServerImpl::Join() {
     // Wait for work to be complete
     _work_thread.join();
+    joined = true;
 }
 
 // See ServerImpl.h
@@ -133,7 +152,7 @@ void ServerImpl::OnRun() {
                 _logger->debug("Break acceptor due to stop signal");
                 run = false;
                 continue;
-            } else if (current_event.data.fd == _server_socket) {
+            } else if (current_event.data.fd == _server_socket && run) {
                 OnNewConnection(epoll_descr);
                 continue;
             }
@@ -157,26 +176,32 @@ void ServerImpl::OnRun() {
             }
 
             // Does it alive?
-            if (!pc->isAlive()) {
+            if (!(pc->isAlive())) {
                 if (epoll_ctl(epoll_descr, EPOLL_CTL_DEL, pc->_socket, &pc->_event)) {
                     _logger->error("Failed to delete connection from epoll");
                 }
 
-                close(pc->_socket);
                 pc->OnClose();
+                close(pc->_socket);
 
+                connections.erase(pc->_socket);
                 delete pc;
             } else if (pc->_event.events != old_mask) {
                 if (epoll_ctl(epoll_descr, EPOLL_CTL_MOD, pc->_socket, &pc->_event)) {
                     _logger->error("Failed to change connection event mask");
 
-                    close(pc->_socket);
                     pc->OnClose();
+                    close(pc->_socket);
 
+                    connections.erase(pc->_socket);
                     delete pc;
                 }
             }
         }
+    }
+    for (auto it = connections.begin();it != connections.end();it++) {
+        close(it->second->_socket);
+        delete it->second;
     }
     _logger->warn("Acceptor stopped");
 }
@@ -207,7 +232,9 @@ void ServerImpl::OnNewConnection(int epoll_descr) {
         }
 
         // Register the new FD to be monitored by epoll.
-        Connection *pc = new(std::nothrow) Connection(infd);
+        Connection *pc = new(std::nothrow) Connection(infd, pStorage, _logger);
+        connections.emplace(std::make_pair(infd, pc));
+        //auto pc = &connections.find(infd)->second;
         if (pc == nullptr) {
             throw std::runtime_error("Failed to allocate connection");
         }
@@ -217,6 +244,8 @@ void ServerImpl::OnNewConnection(int epoll_descr) {
         if (pc->isAlive()) {
             if (epoll_ctl(epoll_descr, EPOLL_CTL_ADD, pc->_socket, &pc->_event)) {
                 pc->OnError();
+                close(pc->_socket);
+                connections.erase(infd);
                 delete pc;
             }
         }
